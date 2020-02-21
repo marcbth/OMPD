@@ -35,7 +35,7 @@ $host = $_GET['host'];
 $port = $_GET['port'];
 $saveTrackId = $_GET['saveTrackId'];
 $saveTrackMpdUrl = getTrackMpdUrl($_GET['track_mpd_url']);
-//add to/save as from track submenu for streams (Tidal/YT)
+//add to/save as from track submenu for streams (Tidal/YT/Highresaudio)
 if (!$saveTrackMpdUrl){
 	$saveTrackMpdUrl = createStreamUrlMpd($saveTrackId);
 }
@@ -161,7 +161,7 @@ function importFavorite($favorite_id, $host, $port, $mode) {
 	$stream = 0;
 	$streamCount = 0;
 	for ($i = 0; $i < count($file); $i++) {
-		if (preg_match('#^(tidal|ftp|http|https|mms|mmst|pnm|rtp|rtsp|sdp)://#', $file[$i])) {
+		if (preg_match('#^(tidal|highresaudio|ftp|http|https|mms|mmst|pnm|rtp|rtsp|sdp)://#', $file[$i])) {
 				//$stream = 1;
 				$streamCount = $streamCount + 1 ;
 		}
@@ -189,7 +189,7 @@ function importFavorite($favorite_id, $host, $port, $mode) {
 		$query = mysqli_query($db,'SELECT track_id FROM track WHERE relative_file = "' . mysqli_real_escape_string($db,$file[$i]) . '"');
 		$track = mysqli_fetch_assoc($query);
 		$isStream = 0;
-		if (preg_match('#^(tidal|ftp|http|https|mms|mmst|pnm|rtp|rtsp|sdp)://#', $file[$i])) {
+		if (preg_match('#^(tidal|highresaudio|ftp|http|https|mms|mmst|pnm|rtp|rtsp|sdp)://#', $file[$i])) {
 			$isStream = 1;
 		}
 		

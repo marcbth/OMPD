@@ -1,10 +1,10 @@
 <?php
 //  +------------------------------------------------------------------------+
-//  | O!MPD, Copyright © 2015-2019 Artur Sierzant                            |
+//  | O!MPD, Copyright ï¿½ 2015-2019 Artur Sierzant                            |
 //  | http://www.ompd.pl                                                     |
 //  |                                                                        |
 //  |                                                                        |
-//  | netjukebox, Copyright © 2001-2012 Willem Bartels                       |
+//  | netjukebox, Copyright ï¿½ 2001-2012 Willem Bartels                       |
 //  |                                                                        |
 //  | http://www.netjukebox.nl                                               |
 //  | http://forum.netjukebox.nl                                             |
@@ -41,6 +41,7 @@ if		($action == '')							home();
 elseif	($action == 'editFavorite')				editFavorite($favorite_id);
 elseif	($action == 'editFavoriteMPD')		editFavoriteMPD($favorite_id);
 elseif	($action == 'viewTidalPlaylist')		viewTidalPlaylist($favorite_id, $favorite_name);
+elseif	($action == 'viewHighresaudioPlaylist')		viewHighresaudioPlaylist($favorite_id, $favorite_name);
 elseif	($action == 'addFavorite')	 			addFavorite();
 elseif	($action == 'saveFavorite') 			saveFavorite($favorite_id);
 elseif	($action == 'importPlaylist')			importFavorite($favorite_id, 'import');
@@ -716,6 +717,121 @@ function addPlaylistUrl() {
 }
 
 
+//  +------------------------------------------------------------------------+
+//  | View Highresaudio playlist                                                    |
+//  +------------------------------------------------------------------------+
+function viewHighresaudioPlaylist($favorite_id, $favorite_name) {
+	global $cfg, $db;
+	authenticate('access_admin');
+	
+	require_once('include/play.inc.php');
+	
+	// formattedNavigator
+	$nav			= array();
+	$nav['name'][]	= 'Favorites';
+	$nav['url'][]	= 'favorite.php';
+	$nav['name'][]	= 'View';
+	require_once('include/header.inc.php');
+	
+?>	
+<form action="favorite.php" method="post" name="favorite" id="favorite">
+	<input type="hidden" name="action" value="saveFavorite">
+	<input type="hidden" name="favorite_id" value="<?php echo $favorite_id; ?>">
+	<input type="hidden" name="sign" value="<?php echo $cfg['sign']; ?>">
+<table cellspacing="0" cellpadding="0" id="favoriteTable">
+<tr class="header">
+	<td colspan="3">&nbsp;Playlist info:</td>
+</tr>
+</tr>
+<tr class="textspace"><td colspan="3"></td></tr>
+<tr>
+<tr>
+	<td id="favoriteTableFirstCol">Name:</td>
+	<td class="textspace">&nbsp;</td>
+	<td class="fullscreen"><?php echo $favorite_name; ?></td>
+</tr>
+
+<tr class="space"><td colspan="3"></td></tr>
+<tr>
+	<td></td>
+	<td></td>
+	<td>
+	</td>
+</tr>
+
+<tr class="textspace"><td colspan="3"></td></tr>
+
+<tr class="header">
+	<td colspan="3">&nbsp;Tracks in this playlist:</td>
+</tr>		
+<tr class="line"><td colspan="9"></td></tr>
+<tr>
+	<td colspan="3">
+	<!-- begin indent -->
+<div id="favoriteList">
+<div style="text-align: center; padding: 1em;">
+ <i class="fa fa-cog fa-spin icon-small"></i> Loading track list...
+</div>
+ </div>
+	<!-- end indent -->
+	</td>
+</tr>
+</table>
+</form>
+
+<script type="text/javascript">
+<!--
+
+$(document).ready(function() {
+	var request = $.ajax({  
+		url: "ajax-favorite-arrange-Highresaudio.php",  
+		type: "POST",  
+		data: { action : 'display',
+				favorite_id : '<?php echo $favorite_id; ?>'
+			  },  
+		dataType: "html"
+	}); 
+
+	request.done(function( data ) {  
+		$( "#favoriteList" ).html( data );
+		//calcTileSize();
+	}); 
+
+	request.fail(function( jqXHR, textStatus ) {  
+		alert( "Request failed: " + textStatus );	
+	}); 
+});
+
+function importPlaylist() {
+	showSpinner();
+	document.favorite.action.value='importPlaylist'; 
+	$('#favorite').submit();
+}
+
+function addPlaylist() {
+	showSpinner();
+	document.favorite.action.value='addPlaylist'; 
+	$('#favorite').submit();
+}
+
+function importPlaylistUrl() {
+	showSpinner();
+	document.favorite.action.value='importPlaylistUrl'; 
+	$('#favorite').submit();
+}
+
+function addPlaylistUrl() {
+	showSpinner();
+	document.favorite.action.value='addPlaylistUrl'; 
+	$('#favorite').submit();
+}
+
+//-->
+</script>
+
+<?php
+	require_once('include/footer.inc.php');
+}
 
 
 
