@@ -1351,6 +1351,948 @@ function getTidalId($id){
 }
 
 
+//  +------------------------------------------------------------------------+
+//  | Albums from Highresaudio                                                     |
+//  +------------------------------------------------------------------------+
+function showAlbumsFromHighresaudio($artist, $size, $ajax = true, $highresaudioArtistId) {
+	global $cfg, $db;
+	//echo $artist;
+	//$artist = highresaudioEscapeChar($artist);
+	//$artist = replaceAnds($artist);
+	$sql = "SELECT MIN(last_update_time) as min_last_update_time 
+	FROM highresaudio_album 
+	WHERE artist LIKE '" . mysqli_real_escape_string($db,$artist) . "'
+	AND last_update_time > 0";
+	$query = mysqli_query($db, $sql);
+	$res = mysqli_fetch_assoc($query);
+	$minDate = $res['min_last_update_time'];
+	
+	$sql = "SELECT MAX(last_update_time) as min_last_update_time 
+	FROM highresaudio_album 
+	WHERE artist LIKE '" . mysqli_real_escape_string($db,$artist) . "'
+	AND last_update_time > 0";
+	$query = mysqli_query($db, $sql);
+	$res = mysqli_fetch_assoc($query);
+	
+	$data = array();
+	
+	//prevent diaplaying albums deleted from Highresaudio
+	$forceUpdate = false;
+	if (abs($res['min_last_update_time'] - $minDate) > 10) $forceUpdate = true;
+	
+	if ($res['min_last_update_time'] < (time() - HIGHRESAUDIO_MAX_CACHE_TIME) || !$query || $forceUpdate) {
+		$t = new HighresaudioAPI;
+		$t->username = $cfg["highresaudio_username"];
+		$t->password = $cfg["highresaudio_password"];
+		$t->token = $cfg["highresaudio_token"];
+		if (NJB_WINDOWS) $t->fixSSLcertificate();
+		$conn = $t->connect();
+		
+		if ($conn === true){
+			if ($highresaudioArtistId) {
+				$results = $t->getArtistAlbums($highresaudioArtistId,999);
+				$resultsEPs = $t->getArtistEPsAndSingles($highresaudioArtistId,999);
+			}
+			else if ($artist) {
+				$artist = highresaudioEscapeChar(strtolower($artist));
+				$results = $t->search("artists",$artist);
+				if (count($results) == 0) {
+					if ($ajax) {
+						$data['results'] = 0;
+						echo safe_json_encode($data);
+						return;
+					}
+					else {
+						echo "No results found on HIGHRESAUDIO.";
+						return;
+					}
+				}
+				else {
+					foreach($results["items"] as $res) {
+						if (highresaudioEscapeChar(strtolower($res["name"])) == $artist) {
+							$highresaudioArtistId = $res["id"];
+							break;
+						}
+					}
+					$results = $t->getArtistAlbums($highresaudioArtistId,999);
+					$resultsEPs = $t->getArtistEPsAndSingles($highresaudioArtistId,999);
+				}
+			}
+		}
+		else {
+			$data['return'] = $conn["return"];
+			$data['response'] = $conn["error"];
+			echo safe_json_encode($data);
+			return;
+		}
+
+		if ($results['totalNumberOfItems'] === 0 && $resultsEPs['totalNumberOfItems'] === 0) {
+			if ($ajax) {
+				$data['results'] = 0;
+				echo safe_json_encode($data);
+				return;
+			}
+			else {
+				echo "No results found on HIGHRESAUDIO.";
+				return;
+			}
+		}
+
+		if ($results['items'] || $resultsEPs['items']) {
+			$sql = "DELETE FROM highresaudio_album WHERE artist_id = '" . mysqli_real_escape_string($db,$highresaudioArtistId) . "'";
+			mysqli_query($db, $sql);
+			for($i=0;$i<2;$i++) {
+				if ($i == 0) {
+					$albums = $results['items'];
+				}
+				else {
+					if($albums = $resultsEPs['items']){;
+						echo ('<h1>EPs and Singles</h1>');
+					}
+				}
+				usort($albums, function ($a, $b) {
+					return $a['releaseDate'] <=> $b['releaseDate'];
+				});
+				foreach ($albums as $album) {
+					
+					$artists = '';
+					foreach ($album["artists"] as $a){
+						if ($artists == ''){
+							$artists = $a["name"];
+						}
+						else {
+							$artists = $artists . " & " . $a["name"];
+						}
+					}
+					if ($artists == '') $artists = $album["artist"]["name"];
+					
+					$sql = "REPLACE INTO highresaudio_album 
+					(album_id, artist, artist_alphabetic, artist_id, album, album_date, genre_id, discs, seconds, last_update_time, cover, type)
+					VALUES (
+					'" . $album["id"] . "', '" . mysqli_real_escape_string($db,$artists) . "', '" . mysqli_real_escape_string($db,$artists) . "', '" . $album["artist"]["id"] . "', '" . mysqli_real_escape_string($db,$album["title"]) . "', '" . $album["releaseDate"] . "', '', 1, '" . $album["duration"] . "','" . time() . "', '" .$album['cover'] . "','" . $album['type'] . "')";
+					
+					mysqli_query($db, $sql);
+					
+					$highresaudioAlbum["album_id"] = 'highresaudio_' . $album["id"];
+					$highresaudioAlbum["album"] = $album["title"];
+					$highresaudioAlbum["artist_alphabetic"] = $artists;
+					draw_tile($size, $highresaudioAlbum);
+				}
+			}
+		}
+		else {
+			if ($ajax) {
+				$data['results'] = 0;
+				echo safe_json_encode($data);
+				return;
+			}
+			else {
+				echo "No results found on HIGHRESAUDIO.";
+				return;
+			}
+		}
+	}
+	else {
+		/* $sql = "SELECT album_id, album, artist FROM highresaudio_album
+		WHERE artist LIKE '" . mysqli_real_escape_string($db,$artist) . "'"; */
+
+		$art = replaceAnds($artist);
+		$as = $cfg['artist_separator'];
+		$count = count($as);
+		$i=0;
+		$search_str = '';
+		
+		for($i=0; $i<$count; $i++) {
+			if (hasThe($artist)){
+				$search_str .= ' OR artist LIKE "' . moveTheToEnd($art) . $as[$i] . '%" 
+				OR artist LIKE "%' . $as[$i] . moveTheToEnd($art) . '" 
+				OR artist LIKE "%' . $as[$i] . moveTheToEnd($art) . $as[$i] . '%" 
+				OR artist LIKE "% & ' . moveTheToEnd($art) . $as[$i] . '%" 
+				OR artist LIKE "%' . $as[$i] . moveTheToEnd($art) . ' & %"';
+				$search_str .= ' OR artist LIKE "' . moveTheToBegining($art) . $as[$i] . '%" 
+				OR artist LIKE "%' . $as[$i] . moveTheToBegining($art) . '" 
+				OR artist LIKE "%' . $as[$i] . moveTheToBegining($art) . $as[$i] . '%" 
+				OR artist LIKE "% & ' . moveTheToBegining($art) . $as[$i] . '%" 
+				OR artist LIKE "%' . $as[$i] . moveTheToBegining($art) . ' & %"';
+			}
+			else {
+				$search_str .= ' OR artist LIKE "' . $art . '' . $as[$i] . '%" 
+				OR artist LIKE "%' . $as[$i] . '' . $art . '" 
+				OR artist LIKE "%' . $as[$i] . '' . $art . '' . $as[$i] . '%" 
+				OR artist LIKE "% & ' . $art . '' . $as[$i] . '%" 
+				OR artist LIKE "%' . $as[$i] . '' . $art . ' & %"';
+				//last 2 lines above for artist like 'Mitch & Mitch' in 'Zbigniew Wodecki; Mitch & Mitch; Orchestra and Choir'
+			}
+		}
+		
+		if (hasThe($artist)){
+			$filter_query = '(
+			artist = "' .  mysqli_real_escape_string($db,moveTheToBegining($artist)) . '" OR artist LIKE "' .mysqli_real_escape_string($db,moveTheToBegining($art)) . '" OR artist = "' .  mysqli_real_escape_string($db,moveTheToEnd($artist)) . '" OR artist LIKE "' .mysqli_real_escape_string($db,moveTheToEnd($art)) . '"' . $search_str . ')';
+		}
+		else {
+			$filter_query = '(
+			artist = "' .  mysqli_real_escape_string($db,$artist) . '" OR artist LIKE "' .mysqli_real_escape_string($db,$art) . '"' . $search_str . ') ORDER BY album_date';
+		}
+		for ($j=0;$j<2;$j++){
+			if ($j==0) {
+				$filter_query1 = 'WHERE type="album" AND ' . $filter_query;
+				$sql = "SELECT album_id, album, artist, album_date FROM highresaudio_album " . $filter_query1;
+				$query = mysqli_query($db,$sql);
+			}
+			else {
+				$filter_query1 = 'WHERE type != "album" AND ' . $filter_query;
+				$sql = "SELECT album_id, album, artist, album_date FROM highresaudio_album " . $filter_query1;
+				$query = mysqli_query($db,$sql);
+				if (mysqli_num_rows($query) > 0) {
+					echo ('<h1>EPs and Singles</h1>');
+				}
+			}
+		
+			
+			while($album = mysqli_fetch_assoc($query)) {
+				$highresaudioAlbum["album_id"] = 'highresaudio_' . $album["album_id"];
+				$highresaudioAlbum["album"] = $album["album"];
+				$highresaudioAlbum["artist_alphabetic"] = $album["artist"];
+				draw_tile($size, $highresaudioAlbum);
+			}
+		}
+	}
+}
+
+
+//  +------------------------------------------------------------------------+
+//  | Album from Highresaudio                                                       |
+//  +------------------------------------------------------------------------+
+function getAlbumFromHighresaudio($album_id) {
+	global $cfg, $db;
+
+	$data = array();
+	
+	$t = new HighresaudioAPI;
+	$t->username = $cfg["highresaudio_username"];
+	$t->password = $cfg["highresaudio_password"];
+	$t->token = $cfg["highresaudio_token"];
+	if (NJB_WINDOWS) $t->fixSSLcertificate();
+	$conn = $t->connect();
+	if ($conn === true){
+		$results = $t->getAlbum($album_id);
+	}
+	else {
+		$data['return'] = $conn["return"];
+		$data['response'] = $conn["error"];
+		echo safe_json_encode($data);
+		return;
+	}
+	
+	if (count($results) == 0) {
+		$data['results'] = 0;
+		return safe_json_encode($data);
+	}
+	
+	$artists = '';
+	foreach ($results["artists"] as $a){
+		if ($artists == ''){
+			$artists = $a["name"];
+		}
+		else {
+			$artists = $artists . " & " . $a["name"];
+		}
+	}
+	if ($artists == '') $artists = $results["artist"]["name"];
+	
+	$sql = "REPLACE INTO highresaudio_album 
+	(album_id, artist, artist_alphabetic, artist_id, album, album_date, genre_id, discs, seconds, last_update_time, cover, type)
+	VALUES (
+	'" . $results["id"] . "', '" . mysqli_real_escape_string($db,$artists) . "', '" . mysqli_real_escape_string($db,$artists) . "', '" . $results["artist"]["id"] . "', '" . mysqli_real_escape_string($db,$results["title"]) . "', '" . $results["releaseDate"] . "', '', 1, '" . $results["duration"] . "','0','" . $results["cover"] . "','" . $results['type'] . "')";
+	
+	mysqli_query($db, $sql);
+	$data['results'] = 1;
+	return safe_json_encode($data);
+}
+
+
+//  +------------------------------------------------------------------------+
+//  | Album from Highresaudio with selected track                                   |
+//  +------------------------------------------------------------------------+
+function getTrackAlbumFromHighresaudio($track_id) {
+	global $cfg, $db;
+
+	$data = array();
+	
+	$t = new HighresaudioAPI;
+	$t->username = $cfg["highresaudio_username"];
+	$t->password = $cfg["highresaudio_password"];
+	$t->token = $cfg["highresaudio_token"];
+	if (NJB_WINDOWS) $t->fixSSLcertificate();
+	$conn = $t->connect();
+	if ($conn === true){
+		$results = $t->getTrack($track_id);
+	}
+	else {
+		return false;
+	}
+	
+	if ($album = $results["album"]["id"]) {
+		return $album;
+	}
+	else {
+		return false;
+	}
+}
+
+
+//  +------------------------------------------------------------------------+
+//  | Artist biography from Highresaudio                                            |
+//  +------------------------------------------------------------------------+
+function showArtistBio($artist_name) {
+	global $cfg, $db;
+	$artist_name = moveTheToBegining($artist_name);
+	$data = array();
+	$t = new HighresaudioAPI;
+	$t->username = $cfg["highresaudio_username"];
+	$t->password = $cfg["highresaudio_password"];
+	$t->token = $cfg["highresaudio_token"];
+	if (NJB_WINDOWS) $t->fixSSLcertificate();
+	$conn = $t->connect();
+	if ($conn === true){
+		$res = $t->search("artists",$artist_name);
+		if ($res["totalNumberOfItems"] == 0) {
+			$data["artist_count"] = 0;
+			$data["return"] = 0;
+		}
+		else {
+			//$data["test"] = $res["totalNumberOfItems"];
+			foreach ($res["items"] as $artist) {
+				/* echo highresaudioEscapeChar(strtolower($artist["name"])) . '<br>';
+				echo $artist["name"] . '<br>';
+				echo highresaudioEscapeChar(strtolower($artist_name)) . '<br>';
+				echo $artist_name; */
+				if (highresaudioEscapeChar(strtolower($artist["name"])) == highresaudioEscapeChar(strtolower($artist_name))) {
+					$id = $artist["id"];
+					$data = $t->getArtistBio($id);
+					if ($artist["picture"]){
+						$data["picture"] = $t->artistPictureToURL($artist["picture"]);
+						$data["pictureW"] = $t->artistPictureWToURL($artist["picture"]);
+					}
+					else {
+						$data["picture"] = "";
+					}
+					$data["text"] = formatBio($data["text"]);
+					$data["artist_id"] = $id;
+					$data["related_artists"] = $t->getRelatedArtists($id);
+					$i = 0;
+					if ($data["related_artists"]) {
+						foreach($data["related_artists"] as $rel_artist){
+							//$rel_artist["picture"] = $t->artistPictureToURL($rel_artist["picture"]);
+							if ($rel_artist["picture"]) {
+								$data["related_artists"][$i]["picture"] = $t->artistPictureToURL($rel_artist["picture"]);
+							}
+							else {
+								$data["related_artists"][$i]["picture"] = "";
+							}
+							$i++;
+						}
+					}
+					/* $data = $t->getArtistAll($id);
+					$data["picture"] = $t->getArtistPicture($data["rows"][0]["modules"][0]["artist"]["picture"]);
+					$data["text"] = formatBio($data["rows"][0]["modules"][0]["bio"]["text"]); */
+					if ($data["status"] == 404 && strpos($data["userMessage"],"not found") === false) {
+						$data["artist_count"] = 0; 
+					}
+					else {
+						$data["artist_count"] = 1; 
+					}
+					$data["return"] = 0;
+					break;
+				}
+				else {
+					$data["artist_count"] = 0;
+					$data["return"] = 0;
+				}
+			}
+		}
+	}
+	else {
+		$data['return'] = $conn["return"];
+		$data['response'] = $conn["error"];
+	}
+	echo safe_json_encode($data);
+}
+
+
+//  +------------------------------------------------------------------------+
+//  | Format artist bio from Highresaudio                                          |
+//  +------------------------------------------------------------------------+
+function formatBio($bio) {
+	global $cfg, $db;
+	
+	$bio = str_replace("<br/><br/>","<br/>",$bio);
+	$bio = str_replace("<br/>","<br/><br/>",$bio);
+	$bio = str_replace("[/wimpLink]","</a>",$bio);
+	$bio = str_replace('[wimpLink artistId="','<a target="_blank" href="' . HIGHRESAUDIO_ARTIST_URL,$bio);
+	$bio = str_replace('[wimpLink albumId="','<a target="_blank" href="' . HIGHRESAUDIO_ALBUM_URL,$bio);
+	$bio = str_replace('"]','">',$bio);
+	//$bio = $bio . "<br/><br/>";
+	return $bio;
+	
+}
+
+//  +------------------------------------------------------------------------+
+//  | Tracks from Highresaudio album                                                |
+//  +------------------------------------------------------------------------+
+function getTracksFromHighresaudioAlbum($album_id, $order = '') {
+	global $cfg, $db;
+	$field = 'albumTracks';
+	$value = $album_id;
+	
+	$sql = "SELECT album_id FROM highresaudio_album WHERE album_id = " . $album_id;
+	$query = mysqli_query($db,$sql);
+	if (mysqli_num_rows($query) == 0) {
+		getAlbumFromHighresaudio($album_id);
+	}
+	 
+	$t = new HighresaudioAPI;
+	$t->username = $cfg["highresaudio_username"];
+	$t->password = $cfg["highresaudio_password"];
+	$t->token = $cfg["highresaudio_token"];
+	if (NJB_WINDOWS) $t->fixSSLcertificate();
+	$conn = $t->connect();
+	if ($conn === true){
+		$results = $t->getAlbumTracks($album_id);
+	}
+	else {
+		$data['return'] = $conn["return"];
+		$data['response'] = $conn["error"];
+		echo safe_json_encode($data);
+		return;
+	}
+	
+	if (!$results["totalNumberOfItems"]) {
+		$data['results'] = 0;
+		return safe_json_encode($data);
+	}
+	 
+	$tracks = $results["items"];
+	if (count($tracks) > 0) {
+		if ($order == 'DESC') {
+			usort($tracks, function ($a, $b) {
+				return $b['volumeNumber'] <=> $a['volumeNumber'] ?: $b['trackNumber'] <=> $a['trackNumber'];
+			});
+		}
+		else {
+			usort($tracks, function ($a, $b) {
+				return $a['volumeNumber'] <=> $b['volumeNumber'] ?: $a['trackNumber'] <=> $b['trackNumber'];
+			});
+		}
+		foreach ($tracks as $track){
+			$artists = '';
+			foreach ($track["artists"] as $a){
+				if ($artists == ''){
+					$artists = $a["name"];
+				}
+				else {
+					$artists = $artists . " & " . $a["name"];
+				}
+			}
+			if ($artists == '') $artists = $track["artist"]["name"];
+			$sql = "REPLACE INTO highresaudio_track 
+			(track_id, title, artist, artist_alphabetic, genre_id, disc, seconds, number, album_id)
+			VALUES (
+			'" . $track["id"] . "', '" . mysqli_real_escape_string($db,$track["title"]) . "', '" . mysqli_real_escape_string($db,$artists) . "', '" . mysqli_real_escape_string($db,$artists) . "', '', '" . $track["volumeNumber"] . "', '" . $track["duration"] . "', '" . $track["trackNumber"] . "', '" . $album_id . "')";
+			
+			mysqli_query($db, $sql);
+		}
+		//if ($order == 'DESC') array_reverse($tracks);
+		return safe_json_encode($tracks);
+	}
+	return false;
+}
+
+
+//  +------------------------------------------------------------------------+
+//  | All from Highresaudio                                                         |
+//  +------------------------------------------------------------------------+
+function showAllFromHighresaudio($searchStr, $size) {
+	global $cfg, $db;
+	$field = 'all';
+	$value = $searchStr;
+	$artistsList = "";
+	$albumsList = "";
+	$data = array();
+	
+	$t = new HighresaudioAPI;
+	$t->username = $cfg["highresaudio_username"];
+	$t->password = $cfg["highresaudio_password"];
+	$t->token = $cfg["highresaudio_token"];
+	if (NJB_WINDOWS) $t->fixSSLcertificate();
+	$conn = $t->connect();
+	if ($conn === true){
+		$results = $t->searchAll($value);
+	}
+	else {
+		$data['return'] = $conn["return"];
+		$data['response'] = $conn["error"];
+		echo safe_json_encode($data);
+		return;
+	}
+	
+	if (count($results['artists']['items']) == 0) {
+		$data['artists_results'] = 0;
+	}
+	if ($results['artists']['items']) {
+		$data['artists_results'] = count($results['artists']['items']);
+		$artistsList = '<table class="border" cellspacing="0" cellpadding="0">';
+		foreach ($results['artists']['items'] as $art) {
+			//$artistsList .= '<tr class="artist_list"><td class="space"></td><td><a href="index.php?action=viewHighresaudioAlbums&amp;highresaudioArtist=' . rawurlencode($art['name']) . '&amp;highresaudioArtistId=' . rawurlencode($art['id']). '&amp;order=year">' . html($art['name']) . '</a></td></tr>';
+			$artistsList .= '<tr class="artist_list"><td class="space"></td><td><a href="index.php?action=view2&order=year&sort=asc&artist=' . rawurlencode($art['name']) . '&amp;highresaudioArtistId=' . rawurlencode($art['id']). '&amp;order=year">' . html($art['name']) . '</a></td></tr>';
+			}
+		$artistsList .= '</table>';
+		$data['artists'] = $artistsList;
+	}
+	
+	if (count($results['albums']['items']) == 0) {
+		$data['albums_results'] = 0;
+	}
+	if ($results['albums']['items']) {
+		$data['albums_results'] = count($results['albums']['items']);
+		$albumsList = '<table class="border" cellspacing="0" cellpadding="0">';
+		foreach ($results['albums']['items'] as $art) {
+			$album['album_id'] = 'highresaudio_' . $art['id'];
+			$album['artist_alphabetic'] = $art['artists'][0]['name'];
+			$album['album'] = $art['title'];
+			$albumsList .= draw_tile($size, $album, '', 'string');
+			}
+		$albumsList .= '</table>';
+		$data['albums'] = $albumsList;
+	}
+	
+	if (count($results['tracks']['items']) == 0) {
+		$data['tracks_results'] = 0;
+	}
+	if ($results['tracks']['items']) {
+		$data['tracks_results'] = count($results['tracks']['items']);
+		$tracksList = highresaudioTracksList($results['tracks']);
+		/* $tracksList = '<table class="border" cellspacing="0" cellpadding="0">';
+		$tracksList .= '
+		<tr class="header">
+			<td class="icon"></td><!-- track menu -->
+			<td class="icon">';
+		if ($cfg["access_add"] && false) {  
+			$tracksList .= '<span onMouseOver="return overlib(\'Add all tracks\');" onMouseOut="return nd();"><i id="add_all_TT" class="fa fa-plus-circle fa-fw icon-small pointer"></i></span>';
+		}
+		$tracksList .= '
+			</td><!-- add track -->
+			<td class="track-list-artist">Track artist&nbsp;</td>
+			<td>Title&nbsp;</td>
+			<td>Album&nbsp;</td>
+			<td></td>
+			<td></td>
+			<td align="right" class="time time_w">Time</td>
+			<td class="space right"></td>
+		</tr>';
+		
+		$i=40000;
+		$TT_ids = ''; 
+		foreach ($results['tracks']['items'] as $track) {
+			$track['track_id'] = 'highresaudio_' . $track['id'];
+			$isFavorite = isInFavorite($track['track_id'], $cfg['favorite_id']);
+			$isBlacklist = isInFavorite($track['track_id'], $cfg['blacklist_id']);
+			$even_odd = ($i++ & 1) ? 'even' : 'odd';
+			$tracksList .= '
+			
+			<tr class="' . $even_odd . ' mouseover">
+				<td class="icon">
+				<span id="menu-track'. $i .'">
+				<div onclick="toggleMenuSub(' . $i . ');">
+					<i id="menu-icon' . $i .'" class="fa fa-bars icon-small"></i>
+				</div>
+				</span>
+				</td>
+				
+				<td class="icon">
+				<span>';
+			if ($cfg['access_add']) {
+				$tracksList .= '<a href="javascript:ajaxRequest(\'play.php?action=addSelect&amp;album_id=highresaudio_' . $track['album']['id'] .'&amp;track_id=' . $track['track_id'] . '\',evaluateAdd);" onMouseOver="return overlib(\'Add track ' . addslashes($track['title']) . '\');" onMouseOut="return nd();"><i id="add_highresaudio_' . $track['id'] . '" class="fa fa-plus-circle fa-fw icon-small"></i></a>';
+			}
+			$tracksList .= '
+				</span>
+				</td>
+				<td class="track-list-artist">
+				<a href="index.php?action=view2&amp;artist=' . rawurlencode($track['artists'][0]['name']) . '&amp;order=year">' . html($track['artists'][0]['name']) . '</a>';
+				if (count($track['artists']) > 1) {
+					foreach ($track['artists'] as $key => $TOPT_art)
+					if ($key > 0) {
+						$tracksList .= ' & <a href="index.php?action=view2&amp;artist=' . rawurlencode($TOPT_art['name']) . '&amp;order=year">' . html($TOPT_art['name']) . '</a>';
+					}
+				}
+				$tracksList .= '</td>
+				<td><a id="a_play_track' . $i . '" href="javascript:ajaxRequest(\'play.php?action=insertSelect&amp;playAfterInsert=yes&amp;album_id=highresaudio_' . $track['album']['id'] .'&amp;track_id=' . $track['track_id'] . '&amp;position_id=' . $i . '\',evaluateAdd);" onMouseOver="return overlib(\'Play track ' . $track['number'] . '\');" onMouseOut="return nd();">' . $track['title'] . '</a>
+				<span class="track-list-artist-narrow">by ' . html($track['artists'][0]['name']);
+				if (count($track['artists']) > 1) {
+					foreach ($track['artists'] as $key => $TOPT_art)
+					if ($key > 0) {
+						$tracksList .= ' & ' . html($TOPT_art['name']);
+					}
+				}
+				$o = "";
+				if (!$isFavorite) {
+					$o = "-o";
+				}
+				$starClass = "";
+				if ($isBlacklist) {
+					$starClass = " blackstar blackstar-selected";
+				}
+				$tracksList .= '</span>
+				</td>
+				
+				<td><a id="a_album' . $i . '" href="index.php?action=view3&amp;album_id=highresaudio_' . $track['album']['id'] . '">' . $track['album']['title'] . '</a>
+				</td>
+				
+				<td onclick="toggleStarSub(' . $i . ',\'' . $track['track_id'] . '\');" class="pl-favorites">
+				<span id="blacklist-star-bg' . $track['track_id'] . '" class="' . $starClass . '">
+				<i class="fa fa-star' . $o . ' fa-fw" id="favorite_star-' . $track['track_id'] . '"></i>
+				</span>
+				</td>
+				
+				<td></td>
+				<td>' . formattedTime($track['duration'] * 1000) . '</td>
+				<td></td>
+				</tr>
+			
+			';
+			$tracksList .= '
+				<tr>
+					<td colspan="20">
+					' . starSubMenu($i, $isFavorite, $isBlacklist, $track['track_id'], 'string') . '
+					</td>
+				</tr>';
+			
+			$tracksList .= '
+				<tr>
+				<td colspan="20">
+				' . trackSubMenu($i, $track, 'highresaudio_' . $track['album']['id'], 'string') . '
+				</td>
+				</tr>';
+			}
+		$tracksList .= '</table>'; */
+		$data['tracks'] = $tracksList;
+	}
+	echo safe_json_encode($data);
+}
+
+
+//  +------------------------------------------------------------------------+
+//  | Top tracks from Highresaudio                                                  |
+//  +------------------------------------------------------------------------+
+function showTopTracksFromHighresaudio($artist, $highresaudioArtistId = "") {
+	global $cfg, $db;
+	$value = $searchStr;
+	$data = array();
+	$data['tracks_results'] = 0;
+	
+	$t = new HIGHRESAUDIOAPI;
+	$t->username = $cfg["highresaudio_username"];
+	$t->password = $cfg["highresaudio_password"];
+	$t->token = $cfg["highresaudio_token"];
+	if (NJB_WINDOWS) $t->fixSSLcertificate();
+	$conn = $t->connect();
+	if ($conn === true){
+		if ($highresaudioArtistId) {
+			$results = $t->getArtistTopTracks($highresaudiolArtistId);
+		}
+		elseif ($artist) {
+			$artist = highresaudioEscapeChar(strtolower($artist));
+				$results = $t->search("artists",$artist);
+				if (count($results) == 0) {
+					if ($ajax) {
+						$data['results'] = 0;
+						echo safe_json_encode($data);
+						return;
+					}
+					else {
+						echo "No results found on Highresaudio.";
+						return;
+					}
+				}
+				else {
+					foreach($results["items"] as $res) {
+						if (highresaudioEscapeChar(strtolower($res["name"])) == $artist) {
+							$highresaudioArtistId = $res["id"];
+							break;
+						}
+					}
+					$results = $t->getArtistTopTracks($highresaudioArtistId);
+				}
+		}
+	}
+	else {
+		$data['return'] = $conn["return"];
+		$data['response'] = $conn["error"];
+		echo safe_json_encode($data);
+		return;
+	}
+	if ($results['items']) {
+		$data['tracks_results'] = $results['totalNumberOfItems'];
+		$tracksList = highresaudioTracksList($results);
+		/* $tracksList = '<table class="border" cellspacing="0" cellpadding="0">';
+		$tracksList .= '
+		<tr class="header">
+			<td class="icon"></td><!-- track menu -->
+			<td class="icon">';
+		if ($cfg["access_add"] && false) {  
+			$tracksList .= '<span onMouseOver="return overlib(\'Add all tracks\');" onMouseOut="return nd();"><i id="add_all_TOPT" class="fa fa-plus-circle fa-fw icon-small pointer"></i></span>';
+		}
+		$tracksList .= '
+			</td><!-- add track -->
+			<td class="track-list-artist">Track artist&nbsp;</td>
+			<td>Title&nbsp;</td>
+			<td>Album&nbsp;</td>
+			<td></td>
+			<td></td>
+			<td align="right" class="time time_w">Time</td>
+			<td class="space right"></td>
+		</tr>';
+		
+		$i=40000;
+		$TOPT_ids = ''; 
+		foreach ($results['items'] as $track) {
+			$track['track_id'] = 'highresaudio_' . $track['id'];
+			$isFavorite = isInFavorite($track['track_id'], $cfg['favorite_id']);
+			$isBlacklist = isInFavorite($track['track_id'], $cfg['blacklist_id']);
+			$even_odd = ($i++ & 1) ? 'even' : 'odd';
+			$tracksList .= '
+			
+			<tr class="' . $even_odd . ' mouseover">
+				<td class="icon">
+				<span id="menu-track'. $i .'">
+				<div onclick="toggleMenuSub(' . $i . ');">
+					<i id="menu-icon' . $i .'" class="fa fa-bars icon-small"></i>
+				</div>
+				</span>
+				</td>
+				
+				<td class="icon">
+				<span>';
+			if ($cfg['access_add']) {
+				$tracksList .= '<a href="javascript:ajaxRequest(\'play.php?action=addSelect&amp;album_id=highresaudio_' . $track['album']['id'] .'&amp;track_id=' . $track['track_id'] . '\',evaluateAdd);" onMouseOver="return overlib(\'Add track ' . addslashes($track['title']) . '\');" onMouseOut="return nd();"><i id="add_highresaudio_' . $track['id'] . '" class="fa fa-plus-circle fa-fw icon-small"></i></a>';
+			}
+			$tracksList .= '
+				</span>
+				</td>
+				<td class="track-list-artist">
+				<a href="index.php?action=view2&amp;artist=' . rawurlencode($track['artists'][0]['name']) . '&amp;order=year">' . html($track['artists'][0]['name']) . '</a>';
+				if (count($track['artists']) > 1) {
+					foreach ($track['artists'] as $key => $TOPT_art)
+					if ($key > 0) {
+						$tracksList .= ' & <a href="index.php?action=view2&amp;artist=' . rawurlencode($TOPT_art['name']) . '&amp;order=year">' . html($TOPT_art['name']) . '</a>';
+					}
+				}
+				$tracksList .= '</td>
+				<td><a id="a_play_track' . $i . '" href="javascript:ajaxRequest(\'play.php?action=insertSelect&amp;playAfterInsert=yes&amp;album_id=highresaudio_' . $track['album']['id'] .'&amp;track_id=' . $track['track_id'] . '&amp;position_id=' . $i . '\',evaluateAdd);" onMouseOver="return overlib(\'Play track ' . $track['number'] . '\');" onMouseOut="return nd();">' . $track['title'] . '</a>
+				<span class="track-list-artist-narrow">by ' . html($track['artists'][0]['name']);
+				if (count($track['artists']) > 1) {
+					foreach ($track['artists'] as $key => $TOPT_art)
+					if ($key > 0) {
+						$tracksList .= ' & ' . html($TOPT_art['name']);
+					}
+				}
+				$o = "";
+				if (!$isFavorite) {
+					$o = "-o";
+				}
+				$starClass = "";
+				if ($isBlacklist) {
+					$starClass = " blackstar blackstar-selected";
+				}
+				$tracksList .= '</span>
+				</td>
+				
+				<td><a id="a_album' . $i . '" href="index.php?action=view3&amp;album_id=highresaudio_' . $track['album']['id'] . '">' . $track['album']['title'] . '</a>
+				</td>
+				
+				<td onclick="toggleStarSub(' . $i . ',\'' . $track['track_id'] . '\');" class="pl-favorites">
+				<span id="blacklist-star-bg' . $track['track_id'] . '" class="' . $starClass . '">
+				<i class="fa fa-star' . $o . ' fa-fw" id="favorite_star-' . $track['track_id'] . '"></i>
+				</span>
+				</td>
+				
+				<td></td>
+				<td>' . formattedTime($track['duration'] * 1000) . '</td>
+				<td></td>
+				</tr>
+			
+			';
+			$tracksList .= '
+				<tr>
+					<td colspan="20">
+					' . starSubMenu($i, $isFavorite, $isBlacklist, $track['track_id'], 'string') . '
+					</td>
+				</tr>';
+			
+			$tracksList .= '
+				<tr>
+				<td colspan="20">
+				' . trackSubMenu($i, $track, 'highresaudio_' . $track['album']['id'], 'string') . '
+				</td>
+				</tr>';
+			}
+		$tracksList .= '</table>'; */
+		$data['top_tracks'] = $tracksList;
+	}
+	echo safe_json_encode($data);
+}
+
+//  +------------------------------------------------------------------------+
+//  | Draws list of tracks from Highresaudio                                       |
+//  +------------------------------------------------------------------------+
+
+function highresaudioTracksList($tracks) {
+	global $cfg;
+	$tracksList = '<table class="border" cellspacing="0" cellpadding="0">';
+		$tracksList .= '
+		<tr class="header">
+			<td class="icon"></td><!-- track menu -->
+			<td class="icon">';
+		if ($cfg["access_add"] && false) {  
+			$tracksList .= '<span onMouseOver="return overlib(\'Add all tracks\');" onMouseOut="return nd();"><i id="add_all_TOPT" class="fa fa-plus-circle fa-fw icon-small pointer"></i></span>';
+		}
+		$tracksList .= '
+			</td><!-- add track -->
+			<td class="track-list-artist">Track artist&nbsp;</td>
+			<td>Title&nbsp;</td>
+			<td>Album&nbsp;</td>
+			<td></td>
+			<td></td>
+			<td align="right" class="time time_w">Time</td>
+			<td class="space right"></td>
+		</tr>';
+		
+		$i=40000;
+		$TOPT_ids = ''; 
+		foreach ($tracks['items'] as $track) {
+			$track['track_id'] = 'highresaudio_' . $track['id'];
+			$isFavorite = isInFavorite($track['track_id'], $cfg['favorite_id']);
+			$isBlacklist = isInFavorite($track['track_id'], $cfg['blacklist_id']);
+			$even_odd = ($i++ & 1) ? 'even' : 'odd';
+			$tracksList .= '
+			
+			<tr class="' . $even_odd . ' mouseover">
+				<td class="icon">
+				<span id="menu-track'. $i .'">
+				<div onclick="toggleMenuSub(' . $i . ');">
+					<i id="menu-icon' . $i .'" class="fa fa-bars icon-small"></i>
+				</div>
+				</span>
+				</td>
+				
+				<td class="icon">
+				<span>';
+			if ($cfg['access_add']) {
+				$tracksList .= '<a href="javascript:ajaxRequest(\'play.php?action=addSelect&amp;album_id=highresaudio_' . $track['album']['id'] .'&amp;track_id=' . $track['track_id'] . '\',evaluateAdd);" onMouseOver="return overlib(\'Add track ' . addslashes($track['title']) . '\');" onMouseOut="return nd();"><i id="add_highresaudio_' . $track['id'] . '" class="fa fa-plus-circle fa-fw icon-small"></i></a>';
+			}
+			$tracksList .= '
+				</span>
+				</td>
+				<td class="track-list-artist">
+				<a href="index.php?action=view2&amp;artist=' . rawurlencode($track['artists'][0]['name']) . '&amp;order=year">' . html($track['artists'][0]['name']) . '</a>';
+				if (count($track['artists']) > 1) {
+					foreach ($track['artists'] as $key => $TOPT_art)
+					if ($key > 0) {
+						$tracksList .= ' & <a href="index.php?action=view2&amp;artist=' . rawurlencode($TOPT_art['name']) . '&amp;order=year">' . html($TOPT_art['name']) . '</a>';
+					}
+				}
+				$tracksList .= '</td>
+				<td><a id="a_play_track' . $i . '" href="javascript:ajaxRequest(\'play.php?action=insertSelect&amp;playAfterInsert=yes&amp;album_id=highresaudio_' . $track['album']['id'] .'&amp;track_id=' . $track['track_id'] . '&amp;position_id=' . $i . '\',evaluateAdd);" onMouseOver="return overlib(\'Play track ' . $track['number'] . '\');" onMouseOut="return nd();">' . $track['title'] . '</a>
+				<span class="track-list-artist-narrow">by ' . html($track['artists'][0]['name']);
+				if (count($track['artists']) > 1) {
+					foreach ($track['artists'] as $key => $TOPT_art)
+					if ($key > 0) {
+						$tracksList .= ' & ' . html($TOPT_art['name']);
+					}
+				}
+				$o = "";
+				if (!$isFavorite) {
+					$o = "-o";
+				}
+				$starClass = "";
+				if ($isBlacklist) {
+					$starClass = " blackstar blackstar-selected";
+				}
+				$tracksList .= '</span>
+				</td>
+				
+				<td><a id="a_album' . $i . '" href="index.php?action=view3&amp;album_id=highresaudio_' . $track['album']['id'] . '">' . $track['album']['title'] . '</a>
+				</td>
+				
+				<td onclick="toggleStarSub(' . $i . ',\'' . $track['track_id'] . '\');" class="pl-favorites">
+				<span id="blacklist-star-bg' . $track['track_id'] . '" class="' . $starClass . '">
+				<i class="fa fa-star' . $o . ' fa-fw" id="favorite_star-' . $track['track_id'] . '"></i>
+				</span>
+				</td>
+				
+				<td></td>
+				<td>' . formattedTime($track['duration'] * 1000) . '</td>
+				<td></td>
+				</tr>
+			
+			';
+			$tracksList .= '
+				<tr>
+					<td colspan="20">
+					' . starSubMenu($i, $isFavorite, $isBlacklist, $track['track_id'], 'string') . '
+					</td>
+				</tr>';
+			
+			$tracksList .= '
+				<tr>
+				<td colspan="20">
+				' . trackSubMenu($i, $track, 'highresaudio_' . $track['album']['id'], 'string') . '
+				</td>
+				</tr>';
+			}
+		$tracksList .= '</table>';
+		
+		return $tracksList;
+}
+
+
+//  +------------------------------------------------------------------------+
+//  | Check if album/track is from Highresaudio                                    |
+//  +------------------------------------------------------------------------+
+
+function isHighresaudio($id) {
+	global $cfg;
+	if (strpos($id,"highresaudio_") !== false || strpos($id,'highresaudio.com/') !== false || strpos($id,MPD_HIGHRESAUDIO_URL) !== false || ($cfg['upmpdcli_highresaudio'] && strpos($id,$cfg['upmpdcli_highresaudio']) !== false)) {
+		return true;
+	}
+	return false;
+}
+
+//  +------------------------------------------------------------------------+
+//  | Get pure Highresaudio id of item                                              |
+//  +------------------------------------------------------------------------+
+
+function getHighresaudioId($id){
+	global $cfg;
+	//for stream url from getStreamURL() 
+	if (strpos($id,HIGHRESAUDIO_TRACK_STREAM_URL) !== false) {
+		$id = end(explode('&',$id));
+		return end(explode('=',$id));
+	}
+	//for highresaudio://track/ or highresaudio://album/, https://highresaudio.com/browse/track/120884236 etc
+	elseif (strpos($id,'highresaudio://') !== false || strpos($id,'highresaudio.com/') !== false) {
+		return end(explode('/',$id));
+	}
+	elseif (strpos($id,'action=streamHighresaudio') !== false) {
+		return end(explode('=',$id));
+	}
+	elseif ($cfg['upmpdcli_highresaudio'] && strpos($id,$cfg['upmpdcli_highresaudio']) !== false) {
+		return end(explode('=',$id));
+	}
+	else {
+		return str_replace('highresaudio_','',$id);
+	}
+}
 
 //  +------------------------------------------------------------------------+
 //  | Check if album/track is from Youtube                                   |
