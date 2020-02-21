@@ -1,6 +1,6 @@
  <?php
 //  +------------------------------------------------------------------------+
-//  | O!MPD, Copyright © 2015-2019 Artur Sierzant                            |
+//  | O!MPD, Copyright ï¿½ 2015-2019 Artur Sierzant                            |
 //  | http://www.ompd.pl                                                     |
 //  |                                                                        |
 //  | This program is free software: you can redistribute it and/or modify   |
@@ -96,6 +96,14 @@ function search_all() {
 		tidal_albums();
 		tidal_tracks();
 		tidal_scripts();
+	}
+
+	if ($cfg['use_highresaudio']) {
+		echo '<span class="nav_tree">Results from Highresaudio:</span>';
+		highresaudio_artist();
+		highresaudio_albums();
+		highresaudio_tracks();
+		highresaudio_scripts();
 	}
 	if ($cfg['show_youtube_results']) {
 		echo '<span class="nav_tree">Results from YouTube:</span>';
@@ -1294,7 +1302,177 @@ function tidal_tracks(){
 <?php
 }
 
+//  +------------------------------------------------------------------------+
+//  | Java scripts for Highresaudio part                                            |
+//  +------------------------------------------------------------------------+
 
+function highresaudio_scripts(){
+
+	global $search_string;
+	?>
+	<script>
+	
+	var requestDone = false;
+	
+	$('#highresaudioArtists').click(function() {
+		if (!requestDone) highresaudioSearchAll();
+	});
+	
+	$('#highresaudioAlbums').click(function() {
+		if (!requestDone) highresaudioSearchAll();
+	});
+	
+	$('#highresaudioTracks').click(function() {
+		if (!requestDone) highresaudioSearchAll();
+	});
+	
+	function highresaudioSearchAll(){	
+		var size = $tileSize;
+		//var searchStr = "<?php echo highresaudioEscapeChar($search_string);?>";
+		var searchStr = "<?php echo str_replace('"','',$search_string);?>";
+		var request = $.ajax({  
+			url: "ajax-highresaudio-search.php",  
+			type: "POST",  
+			data: { search : "all", tileSize : size, searchStr : searchStr },  
+			dataType: "json"
+		}); 
+		
+		request.done(function( data ) {
+			if (data['return'] == 1) {
+				$("[id*='LoadingIndicator']").hide();
+				$("[id*='searchResultsTI']").html('<div style="line-height: initial;"><i class="fa fa-exclamation-circle icon-small"></i> Error in execution Highresaudio request.<br><br>' + data['response'] + '<br><br></div>');
+				return;
+			}
+			
+			if (data['artists_results'] > 0) {
+				$( "#searchResultsHIA" ).html( data['artists'] );	
+			}
+			else {
+				$("#artistsLoadingIndicator").hide();
+				$("#searchResultsHIA").html('<span><i class="fa fa-exclamation-circle icon-small"></i> No results found on Highresaudio.</span>');
+			}
+			
+			if (data['albums_results'] > 0) {
+				$( "#searchResultsHIAl" ).html( data['albums'] );	
+			}
+			else {
+				$("#albumsLoadingIndicator").hide();
+				$("#searchResultsHIAl").html('<span><i class="fa fa-exclamation-circle icon-small"></i> No results found on Highresaudio.</span>');
+			}
+			
+			if (data['tracks_results'] > 0) {
+				$( "#searchResultsHIT" ).html( data['tracks'] );	
+			}
+			else {
+				$("#tracksLoadingIndicator").hide();
+				$("#searchResultsHIT").html('<span><i class="fa fa-exclamation-circle icon-small"></i> No results found on Highresaudio.</span>');
+			}
+			
+			calcTileSize();
+			changeTileSizeInfo();
+			setAnchorClick();
+			addFavSubmenuActions();
+			requestDone = true;
+			//console.log (data.length);
+		}); 
+		
+		request.fail(function( jqXHR, textStatus ) {  
+			//alert( "Request failed: " + textStatus );	
+		}); 
+	
+		request.always(function() {
+			// $('#iframeRefresh').addClass("icon-anchor");
+			// $('#iframeRefresh').removeClass("icon-selected fa-spin");
+			$('[id^="add_highresaudio"]').click(function(){
+				$(this).removeClass('fa-plus-circle').addClass('fa-cog fa-spin icon-selected');
+			});
+	
+			$('[id^="play_highresaudio"]').click(function(){
+				$(this).removeClass('fa-play-circle-o').addClass('fa-cog fa-spin icon-selected');
+			});
+			
+		});
+	};
+	
+	</script>
+	<?php
+	
+	}
+	
+	
+	//  +------------------------------------------------------------------------+
+	//  | Artists from Highresaudio                                                     |
+	//  +------------------------------------------------------------------------+
+	
+	function highresaudio_artist(){
+		global $cfg, $db, $size, $search_string;
+	?>
+	<div>
+	<h1 onclick='toggleSearchResults("TIA");' class="pointer" id="highresaudioArtists"><i id="iconSearchResultsTIA" class="fa fa-chevron-circle-down icon-anchor"></i> Artists</h1>
+	<div id="searchResultsTIA">
+	<span id="artistsLoadingIndicator">
+			<i class="fa fa-cog fa-spin icon-small"></i> Loading artists list...
+	</span>
+	<?php 
+	//if ($tileSizePHP) $size = $tileSizePHP;
+	
+	?>
+	</div>
+	</div>
+	
+	<?php
+	}
+	
+	
+	//  +------------------------------------------------------------------------+
+	//  | Albums from Highresaudio                                                      |
+	//  +------------------------------------------------------------------------+
+	
+	function highresaudio_albums(){
+		global $cfg, $db, $size, $search_string;
+	?>
+	<div>
+	<h1 onclick='toggleSearchResults("TIAl");' class="pointer" id="highresaudioAlbums"><i id="iconSearchResultsTIAl" class="fa fa-chevron-circle-down icon-anchor"></i> Albums</h1>
+	<div id="searchResultsTIAl">
+	<span id="albumsLoadingIndicator">
+			<i class="fa fa-cog fa-spin icon-small"></i> Loading albums list...
+	</span>
+	<?php 
+	//if ($tileSizePHP) $size = $tileSizePHP;
+	
+	?>
+	</div>
+	</div>
+	
+	<?php
+	}
+	
+	
+	
+	//  +------------------------------------------------------------------------+
+	//  | Tracks from Highresaudio                                                      |
+	//  +------------------------------------------------------------------------+
+	
+	function highresaudio_tracks(){
+		global $cfg, $db, $size, $search_string;
+	?>
+	<div>
+	<h1 onclick='toggleSearchResults("TIT");' class="pointer" id="highresaudioTracks"><i id="iconSearchResultsTIT" class="fa fa-chevron-circle-down icon-anchor"></i> Tracks</h1>
+	<div id="searchResultsTIT">
+	<span id="tracksLoadingIndicator">
+			<i class="fa fa-cog fa-spin icon-small"></i> Loading tracks list...
+	</span>
+	<?php 
+	//if ($tileSizePHP) $size = $tileSizePHP;
+	
+	?>
+	</div>
+	</div>
+	
+	<?php
+	}
+	
+	
 //  +------------------------------------------------------------------------+
 //  | Java scripts for Youtube part                                          |
 //  +------------------------------------------------------------------------+
