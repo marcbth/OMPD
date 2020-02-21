@@ -40,6 +40,7 @@ if (!$track_id && $track_mpd_url == 'null') {
 }
 
 $addTidalPrefix = false;
+$addHighresaudioPrefix = false;
 $addYouTubePrefix = false;
 $track_id = $track_id ? $track_id :  '';
 $track_mpd_url = $track_mpd_url ? $track_mpd_url :  '';
@@ -57,6 +58,20 @@ if ($track_id) {
 		$track_id = '';
 		$addTidalPrefix = true;
 	}
+
+	elseif (isHighresaudio($track_id)){
+		$highresaudio_track_id = getHighresaudioId($track_id);
+		$quertT = mysqli_query($db,"SELECT track_id FROM highresaudio_track WHERE track_id = '" . $highresaudio_track_id . "'");
+		if (mysqli_affected_rows($db) == 0) {
+			//track not in DB, e.g. result of search - get album and add it to DB
+			$album_id = getTrackAlbumFromHighresaudio($highresaudio_track_id);
+			$get_album_tracks = getTracksFromHighresaudioAlbum($album_id);
+		}
+		$track_mpd_url = createStreamUrlMpd($track_id);
+		$track_id = '';
+		$addHighresaudioPrefix = true;
+	}
+
 	elseif (isYouTube($track_id)){
 		$yt_track_id = getYouTubeId($track_id);
 		//create fake url to get track_id from it later in action == remove
@@ -139,6 +154,7 @@ elseif ($action == 'remove') {
 if (!$track_id) {
 	$track_id = getTrackIdFromUrl($track_mpd_url);
 	if ($addTidalPrefix) $track_id = "tidal_" . $track_id;
+	if ($addHighresaudioPrefix) $track_id = "highresaudio_" . $track_id;
 	if ($addYouTubePrefix) $track_id = "youtube_" . $track_id;
 }
 $data['track_id'] = $track_id;
