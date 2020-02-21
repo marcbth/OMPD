@@ -1,10 +1,10 @@
 <?php
 //  +------------------------------------------------------------------------+
-//  | O!MPD, Copyright © 2015-2019 Artur Sierzant                            |
+//  | O!MPD, Copyright ï¿½ 2015-2019 Artur Sierzant                            |
 //  | http://www.ompd.pl                                                     |
 //  |                                                                        |
 //  |                                                                        |
-//  | netjukebox, Copyright © 2001-2012 Willem Bartels                       |
+//  | netjukebox, Copyright ï¿½ 2001-2012 Willem Bartels                       |
 //  |                                                                        |
 //  | http://www.netjukebox.nl                                               |
 //  | http://forum.netjukebox.nl                                             |
@@ -43,6 +43,7 @@ if		($action == 'playlist')		playlist();
 elseif	($action == 'stream')		stream();
 elseif	($action == 'streamTo')		streamTo();
 elseif	($action == 'streamTidal')		streamTidal($track_id);
+elseif	($action == 'streamHighresaudio')		streamHighresaudio($track_id);
 elseif	($action == 'streamYouTube')		streamYouTube($track_id);
 elseif	($action == 'shareAlbum')	shareAlbum($album_id);
 else	message(__FILE__, __LINE__, 'error', '[b]Unsupported input value for[/b][br]action');
@@ -552,6 +553,38 @@ function streamTidal($id) {
 	}
 }
 
+//  +------------------------------------------------------------------------+
+//  | Stream Highresaudio track                                                     |
+//  +------------------------------------------------------------------------+
+function streamHighresaudio($id) {
+	global $cfg, $db;
+
+	$t = new HIGHRESAUDIOAPI;
+	$t->username = $cfg["highresaudio_username"];
+	$t->password = $cfg["highresaudio_password"];
+	$t->token = $cfg["highresaudio_token"];
+	$t->audioQuality = $cfg["highresaudio_audio_quality"];
+	$t->fixSSLcertificate();
+	$conn = $t->connect();
+	if ($conn === true){
+		$trackURL = $t->getStreamURL($id);
+		for ($i=0;$i<4;$i++) {
+			//get 8 bytes of stream to make sure that stream is ready
+			$stream = file_get_contents($trackURL["url"], NULL, NULL, 0, 8);
+			if (strlen($stream) > 0) {
+				cliLog('stream: ' . $stream . ' iteration: ' . $i);
+				break;
+			}
+		}
+		
+		cliLog('Highresaudio track URL for ' . $id . ': ' . 	$trackURL["url"]);
+		header("Location: " . $trackURL["url"]);
+	}
+	else {
+		echo 'HIGHRESAUDIO_CONNECT_ERROR';
+		var_dump($conn);
+	}
+}
 
 
 

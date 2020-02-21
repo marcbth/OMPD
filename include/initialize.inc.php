@@ -57,6 +57,16 @@ define('TIDAL_MAX_CACHE_TIME', 21600); //6h in [s]
 define('MPD_TIDAL_URL','tidal://track/');
 
 
+// define('HIGHRESAUDIO_RESOURCES_URL','https://resources.highresaudio.com/images/');
+// define('HIGHRESAUDIO_ALBUM_URL','https://listen.highresaudio.com/album/');
+// define('HIGHRESAUDIOL_ARTIST_URL','https://listen.highresaudio.com/artist/');
+// define('HIGHRESAUDIO_TRACK_URL','https://highresaudio.com/browse/track/');
+// define('HIGHRESAUDIO_TRACK_STREAM_URL','audio.highresaudio.com');
+// define('HIGHRESAUDIO_APP_ALBUM_URL','https://highresaudio.com/album/');
+// define('HIGHRESAUDIO_APP_TRACK_URL','https://highresaudio.com/track/');
+// define('HIGHRESAUDIO_MAX_CACHE_TIME', 21600); //6h in [s]
+// define('MPD_HIGHRESAUDIO_URL','highresaudio://track/');
+
 define('NJB_HTTPQ', 0);
 define('NJB_VLC', 1);
 define('NJB_MPD', 2);
@@ -109,6 +119,15 @@ if ($cfg['tidal_username'] && $cfg['tidal_password'] && $cfg['tidal_token']) {
 	require_once('tidalapi/tidal_api.php');
 }
 
+//  +------------------------------------------------------------------------+
+//  | Highresaudio                                                                  |
+//  +------------------------------------------------------------------------+
+
+$cfg['use_highresaudio'] = false;
+if ($cfg['highresaudio_username'] && $cfg['highresaudio_password'] && $cfg['highresaudio_token']) {
+	$cfg['use_highresaudio'] = true;
+	require_once('highresaudioapi/highresaudio_api.php');
+}
 
 //  +------------------------------------------------------------------------+
 //  | Proxy settings                                                         |
