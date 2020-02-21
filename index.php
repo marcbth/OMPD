@@ -64,6 +64,7 @@ elseif	($action == 'viewPopular')		viewPopular();
 elseif	($action == 'viewRecentlyPlayed')	viewRecentlyPlayed();
 elseif	($action == 'viewPlayedAtDay')	viewPlayedAtDay();
 elseif	($action == 'viewTidalAlbums')	viewTidalAlbums();
+elseif	($action == 'viewHighresaudioAlbums')	viewHighresaudioAlbums();
 else	message(__FILE__, __LINE__, 'error', '[b]Unsupported input value for[/b][br]action');
 exit();
 
@@ -2266,6 +2267,38 @@ function viewTidalAlbums() {
 	require_once('include/footer.inc.php');
 }
 
+//  +------------------------------------------------------------------------+
+//  | View Highresaudio albums of given artist                                      |
+//  +------------------------------------------------------------------------+
+function viewHighresaudioAlbums() {
+	global $cfg, $db;
+	global $base_size, $spaces, $scroll_bar_correction;
+	
+	authenticate('access_media');
+	$highresaudioArtist = get('highresaudioArtist');
+	$highresaudioArtistId = get('highresaudioArtistId');
+	// formattedNavigator
+	$nav			= array();
+	$nav['name'][]	= 'Library';
+	$nav['url'][]	= 'index.php';
+	$nav['name'][]	= 'Highresaudio: ablums by ' . ($highresaudioArtist);
+	
+	require_once('include/header.inc.php');
+
+?>
+
+<div class="albums_container">
+<?php
+	
+	if ($tileSizePHP) $size = $tileSizePHP;
+	showAlbumsFromHighresaudio($highresaudioArtist, $size, false, $highresaudioArtistId);
+?>
+</div>
+
+<?php
+	
+	require_once('include/footer.inc.php');
+}
 
 
 

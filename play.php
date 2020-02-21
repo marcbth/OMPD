@@ -1,10 +1,10 @@
 <?php
 //  +------------------------------------------------------------------------+
-//  | O!MPD, Copyright © 2015-2019 Artur Sierzant                            |
+//  | O!MPD, Copyright ï¿½ 2015-2019 Artur Sierzant                            |
 //  | http://www.ompd.pl                                                     |
 //  |                                                                        |
 //  |                                                                        |
-//  | netjukebox, Copyright © 2001-2012 Willem Bartels                       |
+//  | netjukebox, Copyright ï¿½ 2001-2012 Willem Bartels                       |
 //  |                                                                        |
 //  | http://www.netjukebox.nl                                               |
 //  | http://forum.netjukebox.nl                                             |
@@ -49,6 +49,8 @@ elseif	($action == 'playMPDplaylist')	playMPDplaylist();
 elseif	($action == 'addMPDplaylist')	addMPDplaylist();
 elseif	($action == 'playTidalPlaylist')	playTidalPlaylist();
 elseif	($action == 'addTidalPlaylist')	addTidalPlaylist();
+elseif	($action == 'playHighresaudioPlaylist')	playHighresaudioPlaylist();
+elseif	($action == 'addHighresaudioPlaylist')	addHighresaudioPlaylist();
 elseif	($action == 'playSelect')		playSelect();
 elseif	($action == 'addSelect')		addSelect();
 elseif	($action == 'addSelectUrl')		addSelectUrl();
@@ -548,6 +550,129 @@ function loadTidalPlaylist($favorite_id) {
 }
 
 
+//  +------------------------------------------------------------------------+
+//  | Play Highresaudio playlist                                                    |
+//  +------------------------------------------------------------------------+
+function playHighresaudioPlaylist() {
+	global $cfg, $db;
+	authenticate('access_play');
+	require_once('include/play.inc.php');
+	$favorite_id	= get('favorite_id');
+	$data = array();
+	$playResult = 'play_error';
+	
+	mpd('stop');
+	if ($cfg['play_queue'] == false) {
+		mpd('clear');
+	}
+	
+	$playResult = loadHighresaudioPlaylist($favorite_id);
+	
+	mpd('play');
+	if (strpos((string)$playResult,'ACK') !== false) {
+		$playResult = 'play_error';
+	}
+	else {
+		$playResult = 'play_OK';
+	}
+	$data['playResult'] = $playResult;
+	$data['favorite_id'] = $favorite_id;
+	ob_start();
+	echo safe_json_encode($data);
+	header('Connection: close');
+	header('Content-Length: ' . ob_get_length());
+	ob_end_flush();
+	ob_flush();
+	flush();
+}
+
+
+
+
+//  +------------------------------------------------------------------------+
+//  | Add Highresaudio playlist                                                     |
+//  +------------------------------------------------------------------------+
+
+function addHighresaudioPlaylist() {
+	global $cfg, $db;
+	authenticate('access_play');
+	require_once('include/play.inc.php');
+	$favorite_id	= get('favorite_id');
+	$data = array();
+	$playResult = 'add_error';
+	
+	$playResult = loadHighresaudioPlaylist($favorite_id);
+	
+	if (strpos((string)$playResult,'ACK') !== false) {
+		$playResult = 'add_error';
+	}
+	else {
+		$playResult = 'add_OK';
+	}
+	$data['addResult'] = $playResult;
+	$data['favorite_id'] = $favorite_id;
+	ob_start();
+	echo safe_json_encode($data);
+	header('Connection: close');
+	header('Content-Length: ' . ob_get_length());
+	ob_end_flush();
+	ob_flush();
+	flush();
+}
+
+
+
+
+//  +------------------------------------------------------------------------+
+//  | Load Highresaudio playlist                                                    |
+//  +------------------------------------------------------------------------+
+
+function loadHighresaudioPlaylist($favorite_id) {
+	global $cfg, $db;
+	$t = new HighresaudioAPI;
+	$t->username = $cfg["highresaudio_username"];
+	$t->password = $cfg["highresaudio_password"];
+	$t->token = $cfg["highresaudio_token"];
+	if (NJB_WINDOWS) $t->fixSSLcertificate();
+	$conn = $t->connect();
+
+	if ($conn === true){
+		$trackList = $t->getUserPlaylistTracks($favorite_id);
+		
+		for ($i = 0; $i < $trackList['totalNumberOfItems']; $i++) {
+				$artist	= $trackList['items'][$i]['artist']['name'];
+				$title	= $trackList['items'][$i]['title'];
+				$id	= $trackList['items'][$i]['id'];
+				$volumeNumber	= $trackList['items'][$i]['volumeNumber'];
+				$duration	= $trackList['items'][$i]['duration'];
+				$trackNumber	= $trackList['items'][$i]['trackNumber'];
+				$album_id	= $trackList['items'][$i]['album']['id'];
+				$album	= $trackList['items'][$i]['album']['title'];
+				$cover	= $trackList['items'][$i]['album']['cover'];
+				$releaseDate	= $trackList['items'][$i]['album']['releaseDate'];
+				
+				$sql = "SELECT album_id FROM highresaudio_album WHERE album_id = '" . $album_id . "'";
+				$rows = mysqli_num_rows($sql);
+				if ($rows == 0) {
+					$sql = "INSERT INTO highresaudio_album 
+					(album_id, artist, artist_alphabetic, artist_id, album, album_date, genre_id, discs, seconds, last_update_time, cover, type)
+					VALUES (
+					'" . $album_id . "', '', '', '', '" . mysqli_real_escape_string($db,$album) . "', '" . $releaseDate . "', '', 1, '','" . time() . "','" . $cover . "','playlist')";
+					$query2=mysqli_query($db,$sql);
+				}
+				$sql = "REPLACE INTO highresaudio_track 
+				(track_id, title, artist, artist_alphabetic, genre_id, disc, seconds, number, album_id)
+				VALUES (
+				'" . $id . "', '" . mysqli_real_escape_string($db,$title) . "', '" . mysqli_real_escape_string($db,$artist) . "', '" . mysqli_real_escape_string($db,$artist) . "', '', '" . $volumeNumber . "', '" . $duration . "', '" . $trackNumber . "', '" . $album_id . "')";
+				
+				mysqli_query($db, $sql);
+				$playResult = mpdAddHighresaudioTrack('highresaudio_' . $id);
+				cliLog("loadHighresaudioPlaylist id: " . $id);
+				cliLog("loadHighresaudioPlaylist: " . $playResult);
+		}
+	}
+	return $playResult;
+}
 
 //  +------------------------------------------------------------------------+
 //  | Add select                                                             |
