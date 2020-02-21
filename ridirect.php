@@ -1,10 +1,10 @@
 <?php
 //  +------------------------------------------------------------------------+
-//  | O!MPD, Copyright © 2015-2019 Artur Sierzant                            |
+//  | O!MPD, Copyright ï¿½ 2015-2019 Artur Sierzant                            |
 //  | http://www.ompd.pl                                                     |
 //  |                                                                        |
 //  |                                                                        |
-//  | netjukebox, Copyright © 2001-2012 Willem Bartels                       |
+//  | netjukebox, Copyright ï¿½ 2001-2012 Willem Bartels                       |
 //  |                                                                        |
 //  | http://www.netjukebox.nl                                               |
 //  | http://forum.netjukebox.nl                                             |
@@ -60,6 +60,11 @@ $query = mysqli_query($db,'SELECT artist, album
 	FROM tidal_album
 	WHERE album_id = "' . mysqli_real_escape_string($db,getTidalId($album_id)) . '"');
 }
+elseif isHighresaudio($album_id)) {
+	$query = mysqli_query($db,'SELECT artist, album
+		FROM highresaudio_album
+		WHERE album_id = "' . mysqli_real_escape_string($db,getHighresaudioId($album_id)) . '"');
+	}
 else {
 $query = mysqli_query($db,'SELECT artist, album
 	FROM album

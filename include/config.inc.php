@@ -87,7 +87,14 @@ $cfg['tidal_token'] = "";
 $cfg['tidal_audio_quality'] = "HIGH";
 $cfg['tidal_direct'] = true;
 
-
+//  +------------------------------------------------------------------------+
+//  | Highresaudio   dont work yet                                                              |
+//  +------------------------------------------------------------------------+
+$cfg['highresaudio_username'] = "";
+$cfg['highresaudio_password'] = "";
+$cfg['highresaudio_token'] = "";
+$cfg['highresaudio_audio_quality'] = "HIGH";
+$cfg['highresaudio_direct'] = true;
 
 //  +------------------------------------------------------------------------+
 //  | Default login                                                          |

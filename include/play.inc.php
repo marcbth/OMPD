@@ -1,10 +1,10 @@
 <?php
 //  +------------------------------------------------------------------------+
-//  | O!MPD, Copyright © 2015-2019 Artur Sierzant                            |
+//  | O!MPD, Copyright ï¿½ 2015-2019 Artur Sierzant                            |
 //  | http://www.ompd.pl                                                     |
 //  |                                                                        |
 //  |                                                                        |
-//  | netjukebox, Copyright © 2001-2012 Willem Bartels                       |
+//  | netjukebox, Copyright ï¿½ 2001-2012 Willem Bartels                       |
 //  |                                                                        |
 //  | http://www.netjukebox.nl                                               |
 //  | http://forum.netjukebox.nl                                             |
@@ -626,4 +626,16 @@ function mpdAddTidalTrack($id, $insPos = '') {
 	return $mpdCommand;
 }
 
+//  +------------------------------------------------------------------------+
+//  | mpdAddHighresaudioTrack                                                       |
+//  +------------------------------------------------------------------------+
+
+function mpdAddHighresaudioTrack($id, $insPos = '') {
+	global $cfg, $db;
+	$mpdCommand = 'ACK_ERROR_UNKNOWN';
+	$url = createStreamUrlMpd($id);
+	$mpdCommand = mpd('addid "' . $url . '" ' . $insPos);
+	cliLog("id: " . $id . "; url: " . $url);
+	return $mpdCommand;
+}
 ?>
